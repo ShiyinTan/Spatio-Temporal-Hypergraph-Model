@@ -1,5 +1,6 @@
-# Install PyTorch and the matching torch-scatter / torch-sparse wheels first.
-# scripts/setup_env.sh does that from the CUDA index selected for this machine.
+# Install into the conda env "sthgcn". scripts/setup_env.sh creates that env,
+# then installs PyTorch and the matching torch-scatter / torch-sparse wheels
+# from the CUDA index selected for this machine.
 torch_geometric>=2.6
 pandas>=2.2
 pyyaml>=6

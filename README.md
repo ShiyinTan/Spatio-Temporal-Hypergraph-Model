@@ -17,11 +17,11 @@ outperforming baseline models by a large margin. For more information, please se
 
 ## Installation
 
-Python 3.10 or newer is required. The original pins (PyTorch 1.7.0 and PyG 1.7.2) do not install on current Python, so this tree targets PyTorch 2.x and PyG 2.x. `scripts/setup_env.sh` creates `.venv`, installs a CUDA build of PyTorch when `nvidia-smi` can see a GPU, and otherwise installs the CPU build. It then installs matching `torch-scatter` / `torch-sparse` wheels and `requirements.txt`.
+Python 3.12 is required, in the conda env `sthgcn`. The original pins (PyTorch 1.7.0 and PyG 1.7.2) do not install on current Python, so this tree targets PyTorch 2.x and PyG 2.x. `scripts/setup_env.sh` installs Miniconda when `conda` is missing, creates the env from `environment.yml`, installs a CUDA build of PyTorch when `nvidia-smi` can see a GPU (otherwise the CPU build), then installs matching `torch-scatter` / `torch-sparse` wheels and `requirements.txt`.
 
 ```shell
 bash scripts/setup_env.sh
-source .venv/bin/activate
+conda activate sthgcn
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 python scripts/smoke_forward.py
 ```
