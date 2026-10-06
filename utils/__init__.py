@@ -9,7 +9,8 @@ from utils.math_util import (
 from utils.sys_util import (
     get_root_dir,
     set_logger,
-    seed_torch
+    seed_torch,
+    torch_load
 )
 from utils.pipeline_util import (
     save_model,
@@ -30,6 +31,7 @@ __all__ = [
     "get_root_dir",
     "set_logger",
     "seed_torch",
+    "torch_load",
     "save_model",
     "count_parameters",
     "test_step"

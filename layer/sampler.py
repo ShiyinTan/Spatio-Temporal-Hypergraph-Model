@@ -206,12 +206,16 @@ class NeighborSampler(torch.utils.data.DataLoader):
         e_id = e_id[target_mask]
         adjs.append((adj_t, edge_attr, edge_t, edge_type, edge_delta_t, edge_delta_s, e_id, size))
 
-        # Filter traj2traj with leakage
+        # Filter traj2traj with leakage.
+        # sample_adj remaps columns into ``n_id``; recover the original check-in id
+        # before reading POI features. Indexing ``ci_x`` with the local column
+        # reads the wrong rows whenever the sampled subgraph is smaller than
+        # the check-in table.
         target_mask[length:] = True
-        he_poi = self.ci_x[col[target_mask]][:, 1]
+        he_poi = self.ci_x[n_id[col][target_mask]][:, 1]
         im = coo_matrix((
             np.ones(row[target_mask].shape[0]),
-            (he_poi.numpy().astype(np.long), row[target_mask].numpy())
+            (he_poi.numpy().astype(np.int64), row[target_mask].numpy())
         )).tocsr()
         self.he2he_jaccard = im.T * im
         self.he2he_jaccard = self.he2he_jaccard.tocoo()
@@ -310,9 +314,18 @@ class NeighborSampler(torch.utils.data.DataLoader):
                 # recover similarity metric, and calculate edge_attr
                 row, col, value = adj_t.coo()
                 edge_attr = (1 + epsilon) - value
-                source_traj_size = torch.tensor(traj_size[row]) / self.max_traj_size
-                target_traj_size = torch.tensor(traj_size[col]) / self.max_traj_size
-                edge_attr = torch.stack([source_traj_size, target_traj_size, edge_attr], dim=1)
+                # NumPy 2 returns a scalar when indexed by a one-element torch.Tensor.
+                # Convert to a NumPy index first so a single edge stays shape [1].
+                source_traj_size = torch.as_tensor(
+                    traj_size[row.detach().cpu().numpy()], dtype=torch.float32
+                ) / self.max_traj_size
+                target_traj_size = torch.as_tensor(
+                    traj_size[col.detach().cpu().numpy()], dtype=torch.float32
+                ) / self.max_traj_size
+                edge_attr = torch.stack(
+                    [source_traj_size, target_traj_size, edge_attr.to(dtype=torch.float32)],
+                    dim=1
+                )
         else:
             inter_threshold_mask = edge_attr[:, 2] >= self.inter_jaccard_threshold
             intra_threshold_mask = edge_attr[:, 2] >= self.intra_jaccard_threshold

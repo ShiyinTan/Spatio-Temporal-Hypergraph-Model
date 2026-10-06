@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from typing import Dict, Tuple
 from sklearn.preprocessing import LabelEncoder
@@ -19,19 +20,20 @@ def id_encode(
     :return:
     """
     id_le = LabelEncoder()
-    id_le = id_le.fit(fit_df[column].values.tolist())
+    id_le = id_le.fit(fit_df[column].to_numpy())
+    values = encode_df[column].to_numpy()
+    known = np.isin(values, id_le.classes_)
     if padding == 0:
         padding_id = padding
-        encode_df[column] = [
-            id_le.transform([i])[0] + 1 if i in id_le.classes_ else padding_id
-            for i in encode_df[column].values.tolist()
-        ]
+        encoded = np.zeros(len(values), dtype=np.int64)
+        if known.any():
+            encoded[known] = id_le.transform(values[known]) + 1
     else:
         padding_id = len(id_le.classes_)
-        encode_df[column] = [
-            id_le.transform([i])[0] if i in id_le.classes_ else padding_id
-            for i in encode_df[column].values.tolist()
-        ]
+        encoded = np.full(len(values), padding_id, dtype=np.int64)
+        if known.any():
+            encoded[known] = id_le.transform(values[known])
+    encode_df[column] = encoded
     return id_le, padding_id
 
 

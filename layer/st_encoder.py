@@ -73,20 +73,15 @@ class DistanceEncoderHSTLSTM(nn.Module):
         self.dist_dim = embedding_dim
         self.spatial_slots = spatial_slots
         self.embed_q = nn.Embedding(len(spatial_slots), self.dist_dim)
-        self.device = args.gpu
 
     def place_parameters(self, ld, hd, l, h):
-        if self.device == 'cpu':
-            ld = torch.from_numpy(np.array(ld)).type(torch.FloatTensor)
-            hd = torch.from_numpy(np.array(hd)).type(torch.FloatTensor)
-            l = torch.from_numpy(np.array(l)).type(torch.LongTensor)
-            h = torch.from_numpy(np.array(h)).type(torch.LongTensor)
-        else:     
-            ld = torch.from_numpy(np.array(ld, dtype=np.float16)).type(torch.FloatTensor).to(self.device)
-            hd = torch.from_numpy(np.array(hd, dtype=np.float16)).type(torch.FloatTensor).to(self.device)
-            l = torch.from_numpy(np.array(l, dtype=np.float16)).type(torch.LongTensor).to(self.device)
-            h = torch.from_numpy(np.array(h, dtype=np.float16)).type(torch.LongTensor).to(self.device)
-        return ld, hd, l, h
+        device = self.embed_q.weight.device
+        return (
+            ld.to(device=device, dtype=torch.float32),
+            hd.to(device=device, dtype=torch.float32),
+            l.to(device=device, dtype=torch.long),
+            h.to(device=device, dtype=torch.long),
+        )
 
     def cal_inter(self, ld, hd, l, h, embed):
         """

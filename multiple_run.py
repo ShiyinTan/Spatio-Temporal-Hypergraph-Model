@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 
 
@@ -11,6 +12,6 @@ args = parser.parse_args()
 
 for i in range(int(args.num_run)):
     print(f"Start carrying out experiment {i+1}/{args.num_run}...")
-    exec_str = f"CUDA_VISIBLE_DEVICES={args.gpu_id} python run.py -f {args.yaml_file} --multi_run_mode"
+    exec_str = f"CUDA_VISIBLE_DEVICES={args.gpu_id} {sys.executable} run.py -f {args.yaml_file} --multi_run_mode"
     os.system(exec_str)
     print("\n\n")

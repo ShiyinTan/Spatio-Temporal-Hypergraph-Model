@@ -16,22 +16,52 @@ outperforming baseline models by a large margin. For more information, please se
 ![STHGCN Overall Framework](STHGCN.png)
 
 ## Installation
-1. Clone the repository (If showing error of no permission, need to first [add a new SSH key to your GitHub account](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account).):
-    ```shell
-   git clone https://github.com/ant-research/Spatio-Temporal-Hypergraph-Model.git
-    ```
-2. The repository has some important dependencies below, and we don't guarantee that the code still works if using higher versions. 
-   Please refer to the respective page to install:
-   + [Pytorch](https://pytorch.org/) == 1.7.0
-   + [pytorch_geometric](https://github.com/pyg-team/pytorch_geometric#installation) == 1.7.2
-     + torch-scatter == 2.0.7
-     + torch-sparse == 0.6.9
-     + torch-cluster == 1.5.9
-     + torch-spline-conv == 1.2.1
-3. Install other dependencies in `requirements.txt`:
-    ```shell
-    pip install -r requirements.txt
-    ```
+
+Python 3.10 or newer is required. The original pins (PyTorch 1.7.0 and PyG 1.7.2) do not install on current Python, so this tree targets PyTorch 2.x and PyG 2.x. `scripts/setup_env.sh` creates `.venv`, installs a CUDA build of PyTorch when `nvidia-smi` can see a GPU, and otherwise installs the CPU build. It then installs matching `torch-scatter` / `torch-sparse` wheels and `requirements.txt`.
+
+```shell
+bash scripts/setup_env.sh
+source .venv/bin/activate
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+python scripts/smoke_forward.py
+```
+
+The script pins a PyTorch release that still has official PyG extension wheels: 2.12.1 for driver CUDA 12.6 or newer, 2.6.0 for CUDA 12.4, and 2.7.1 for CUDA 11.8. A newer `pip install torch` has no matching `torch-sparse` wheel yet.
+
+`smoke_forward.py` runs one optimizer step on a tiny synthetic graph. A printed `smoke ok` line means the GPU (or CPU) stack can execute the model. Numbers will differ from the paper when the GPU is not a V100, and also because neighbor sampling now reads each check-in's real POI id. The previous code indexed the check-in table with the remapped subgraph column, which points at the wrong row whenever the sampled subgraph is smaller than the full check-in list.
+
+### Data
+
+Unzip the raw files before the first training run. Preprocessing runs automatically inside `run.py` and is skipped once `data/<name>/preprocessed/` exists.
+
+```shell
+unzip -o data/nyc/raw.zip -d data/nyc
+unzip -o data/tky/raw.zip -d data/tky
+```
+
+`data/ca/raw.zip` is stored in Git LFS (about 175MB). If `file data/ca/raw.zip` prints `ASCII text`, the pointer has not been downloaded yet:
+
+```shell
+git lfs pull --include data/ca/raw.zip
+unzip -o data/ca/raw.zip -d data/ca
+python generate_ca_raw.py
+```
+
+### Train
+
+`run_args.gpu` is the CUDA device index. `0` uses the first visible GPU. `-1` forces CPU. NYC's best config needs about 16GB of GPU memory; TKY with a first sample size above 300 needs about 32GB.
+
+```shell
+python run.py -f best_conf/nyc.yml
+```
+
+Ten repeats, pinning the job to one physical GPU:
+
+```shell
+python multiple_run.py -f best_conf/nyc.yml -n 10 -g 0
+```
+
+The first run builds `data/<name>/preprocessed/` and then trains. Later runs reuse those files. Training logs are written both to the terminal and to `log/<time>/nyc/train.log`. TensorBoard files are under `tensorboard/<time>/nyc`.
 
 ## Hardware
 Here are the minimum requirements of the hardware including CPU and GPU.

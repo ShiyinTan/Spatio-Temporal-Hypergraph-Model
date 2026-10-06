@@ -95,16 +95,25 @@ def generate_hyperedge_stat(data, traj_column):
     :param traj_column: trajectory column name
     :return:
     """
-    traj_stat = pd.DataFrame()
-    traj_stat['size'] = data.groupby(traj_column)['UTCTimeOffsetEpoch'].apply(len)
-    traj_stat['mean_lon'] = data.groupby(traj_column)['Longitude'].apply(sum) / traj_stat['size']
-    traj_stat['mean_lat'] = data.groupby(traj_column)['Latitude'].apply(sum) / traj_stat['size']
-    traj_stat[['last_lon', 'last_lat']] = \
-        data.sort_values([traj_column, 'UTCTimeOffsetEpoch']).groupby(traj_column).last()[['Longitude', 'Latitude']]
-
-    traj_stat['start_time'] = data.groupby(traj_column)['UTCTimeOffsetEpoch'].apply(min)
-    traj_stat['end_time'] = data.groupby(traj_column)['UTCTimeOffsetEpoch'].apply(max)
-    traj_stat['mean_time'] = data.groupby(traj_column)['UTCTimeOffsetEpoch'].apply(sum) / traj_stat['size']
+    grouped = data.groupby(traj_column)
+    traj_stat = grouped.agg(
+        size=('UTCTimeOffsetEpoch', 'size'),
+        mean_lon=('Longitude', 'sum'),
+        mean_lat=('Latitude', 'sum'),
+        start_time=('UTCTimeOffsetEpoch', 'min'),
+        end_time=('UTCTimeOffsetEpoch', 'max'),
+        mean_time=('UTCTimeOffsetEpoch', 'sum'),
+    )
+    traj_stat['mean_lon'] = traj_stat['mean_lon'] / traj_stat['size']
+    traj_stat['mean_lat'] = traj_stat['mean_lat'] / traj_stat['size']
+    traj_stat['mean_time'] = traj_stat['mean_time'] / traj_stat['size']
+    last_loc = (
+        data.sort_values([traj_column, 'UTCTimeOffsetEpoch'])
+        .groupby(traj_column)
+        .last()[['Longitude', 'Latitude']]
+        .rename(columns={'Longitude': 'last_lon', 'Latitude': 'last_lat'})
+    )
+    traj_stat = traj_stat.join(last_loc)
     traj_stat['time_window_in_hour'] = (traj_stat.end_time - traj_stat.start_time) / (60*60)
     logging.info(f'[Preprocess - Generate Hypergraph] Number of hyperedges(trajectory): {traj_stat.shape[0]}.')
     logging.info(
@@ -217,7 +226,8 @@ def generate_traj2traj_data(
         )).tocsr()
 
         # adjust the traj_id size based on new traj_poi_map
-        traj_size_adjust = traj_poi_map.groupby(traj_column).apply(len).tolist()
+        counts = traj_poi_map.groupby(traj_column).size()
+        traj_size_adjust = counts.reindex(range(int(counts.index.max()) + 1), fill_value=0).tolist()
     else:
         traj2node = coo_matrix((
             np.ones(traj_user_map.shape[0]),
@@ -251,9 +261,10 @@ def generate_traj2traj_data(
         mask_3 = traj_user_map['UserId'][traj2traj.row].values != traj_user_map['UserId'][traj2traj.col].values
         mask = mask & mask_3
 
-    traj2traj.row = traj2traj.row[mask]
-    traj2traj.col = traj2traj.col[mask]
-    traj2traj.data = traj2traj.data[mask]
+    traj2traj = coo_matrix(
+        (traj2traj.data[mask], (traj2traj.row[mask], traj2traj.col[mask])),
+        shape=traj2traj.shape
+    )
 
     if relation_type == 'inter':
         # Filter 2: filter based on pre-define metric threshold
@@ -266,9 +277,7 @@ def generate_traj2traj_data(
             threshold=threshold,
             filter_mode=filter_mode
         )
-        traj2traj.row = row_filtered
-        traj2traj.col = col_filtered
-        traj2traj.data = data_filtered
+        traj2traj = coo_matrix((data_filtered, (row_filtered, col_filtered)), shape=traj2traj.shape)
         edge_type = np.ones_like(traj2traj.row)
     else:
         edge_type = np.zeros_like(traj2traj.row)
@@ -358,7 +367,7 @@ def merge_traj2traj_data(traj_stat, intra_u_data, inter_u_data, checkin_offset):
 
 
 def filter_chunk(row, col, data, he_size, chunk_num=10, threshold=0.02, filter_mode='min size'):
-    """
+    r"""
     Filter noise hyperedge2hyperedge connection based on metric threshold
 
     :param row: row, hyperedge2hyperedge scipy.sparse coo matrix

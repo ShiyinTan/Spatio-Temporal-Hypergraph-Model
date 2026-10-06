@@ -33,7 +33,7 @@ class FileReader(FileReaderBase):
             ]
             df['UTCTime'] = df['UTCTime'].apply(lambda x: datetime.strptime(x, "%a %b %d %H:%M:%S +0000 %Y"))
             df['UTCTimeOffset'] = df['UTCTime'] + df['TimezoneOffset'].apply(lambda x: timedelta(hours=x/60))
-        df['UTCTimeOffsetEpoch'] = df['UTCTimeOffset'].apply(lambda x: x.strftime('%s'))
+        df['UTCTimeOffsetEpoch'] = df['UTCTimeOffset'].map(lambda x: int(x.timestamp()))
         df['UTCTimeOffsetWeekday'] = df['UTCTimeOffset'].apply(lambda x: x.weekday())
         df['UTCTimeOffsetHour'] = df['UTCTimeOffset'].apply(lambda x: x.hour)
         df['UTCTimeOffsetDay'] = df['UTCTimeOffset'].apply(lambda x: x.strftime('%Y-%m-%d'))
@@ -76,8 +76,11 @@ class FileReader(FileReaderBase):
         validation_index = int(total_len * 0.8)
         test_index = int(total_len * 0.9)
         df = df.sort_values(by='UTCTimeOffset', ascending=True)
-        df.iloc[validation_index:test_index]['SplitTag'] = 'validation'
-        df.iloc[test_index:]['SplitTag'] = 'test'
+        # Direct iloc assignment. Chained ``df.iloc[...]['SplitTag'] =`` is a no-op
+        # under pandas Copy-on-Write, which would leave every row tagged train.
+        split_col = df.columns.get_loc('SplitTag')
+        df.iloc[validation_index:test_index, split_col] = 'validation'
+        df.iloc[test_index:, split_col] = 'test'
         df['UserRank'] = df.groupby('UserId')['UTCTimeOffset'].rank(method='first')
 
         # Filter out check-in records when their gaps with thier previous check-in and later check-in
