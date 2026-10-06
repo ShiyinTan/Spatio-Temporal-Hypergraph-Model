@@ -2,7 +2,7 @@ import logging
 import torch
 import pandas as pd
 import os.path as osp
-from utils import get_root_dir, construct_slots
+from utils import get_root_dir, construct_slots, torch_load
 
 
 class LBSNDataset:
@@ -81,8 +81,8 @@ class LBSNDataset:
         df_valid = pd.read_csv(osp.join(self.data_path, 'validate_sample.csv'), sep=',')
         df_test = pd.read_csv(osp.join(self.data_path, 'test_sample.csv'), sep=',')
 
-        ci2traj = torch.load(osp.join(self.data_path, 'ci2traj_pyg_data.pt'))
-        traj2traj = torch.load(osp.join(self.data_path, 'traj2traj_pyg_data.pt'))
+        ci2traj = torch_load(osp.join(self.data_path, 'ci2traj_pyg_data.pt'))
+        traj2traj = torch_load(osp.join(self.data_path, 'traj2traj_pyg_data.pt'))
 
         return df, df_train, df_valid, df_test, ci2traj, traj2traj
 

@@ -21,11 +21,13 @@ class SequentialTransformer(nn.Module):
             d_model=self.checkin_embed_size,
             nhead=cfg.seq_transformer_args.header_num,
             dim_feedforward=cfg.seq_transformer_args.hidden_size,
-            dropout=cfg.seq_transformer_args.dropout
+            dropout=cfg.seq_transformer_args.dropout,
+            batch_first=False,
         )
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layers,
-            num_layers=cfg.seq_transformer_args.encoder_layers_num
+            num_layers=cfg.seq_transformer_args.encoder_layers_num,
+            enable_nested_tensor=False,
         )
         self.transformer_positional_encoding = PositionEncoder(
             self.checkin_embed_size,

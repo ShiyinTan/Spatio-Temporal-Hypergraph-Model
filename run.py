@@ -8,10 +8,25 @@ from tqdm import tqdm
 import argparse
 from torch.utils.tensorboard import SummaryWriter
 from preprocess import preprocess
-from utils import seed_torch, set_logger, Cfg, count_parameters, test_step, save_model
+from utils import seed_torch, set_logger, Cfg, count_parameters, test_step, save_model, torch_load
 from layer import NeighborSampler
 from dataset import LBSNDataset
 from model import STHGCN, SequentialTransformer
+
+
+def _tensorboard_hparams(hparam_dict):
+    """TensorBoard rejects None and containers in ``add_hparams``."""
+    sanitized = {}
+    for key, value in hparam_dict.items():
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, (int, float, str)):
+            sanitized[key] = value
+        elif value is None:
+            sanitized[key] = 'None'
+        else:
+            sanitized[key] = str(value)
+    return sanitized
 
 
 if __name__ == '__main__':
@@ -29,6 +44,11 @@ if __name__ == '__main__':
 
     # cuda setting
     if int(cfg.run_args.gpu) >= 0:
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                f'Config asks for cuda:{cfg.run_args.gpu}, but this PyTorch build cannot see a GPU. '
+                'Re-run scripts/setup_env.sh on the GPU machine, or set run_args.gpu to -1 to train on CPU.'
+            )
         device = 'cuda:' + str(cfg.run_args.gpu)
     else:
         device = 'cpu'
@@ -178,7 +198,7 @@ if __name__ == '__main__':
             # Restore model from checkpoint directory
             # manually set in yml
             logging.info(f'[Training] Loading checkpoint %s...' % cfg.run_args.init_checkpoint)
-            checkpoint = torch.load(osp.join(cfg.run_args.init_checkpoint, 'checkpoint.pt'))
+            checkpoint = torch_load(osp.join(cfg.run_args.init_checkpoint, 'checkpoint.pt'), map_location=device)
             init_step = checkpoint['step']
             model.load_state_dict(checkpoint['model_state_dict'])
             current_learning_rate = checkpoint['current_learning_rate']
@@ -271,7 +291,7 @@ if __name__ == '__main__':
     if cfg.run_args.do_test:
         logging.info('[Evaluating] Start evaluating on test set...')
 
-        checkpoint = torch.load(osp.join(cfg.run_args.save_path, 'checkpoint.pt'))
+        checkpoint = torch_load(osp.join(cfg.run_args.save_path, 'checkpoint.pt'), map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         recall_res, ndcg_res, map_res, mrr_res, loss = test_step(model, sampler_test)
         num_params = count_parameters(model)
@@ -292,5 +312,5 @@ if __name__ == '__main__':
             'hparam/MRR': mrr_res,
         }
         logging.info(f'[Evaluating] Test evaluation result : {metric_dict}')
-        summary_writer.add_hparams(hparam_dict, metric_dict)
+        summary_writer.add_hparams(_tensorboard_hparams(hparam_dict), metric_dict)
         summary_writer.close()

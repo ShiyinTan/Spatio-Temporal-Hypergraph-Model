@@ -19,7 +19,16 @@ def conj(a):
 
 
 def ccorr(a, b):
-    return torch.irfft(com_mult(conj(torch.rfft(a, 1)), torch.rfft(b, 1)), 1, signal_sizes=(a.shape[-1],))
+    """Circular correlation.
+
+    ``torch.rfft`` / ``torch.irfft`` were removed after PyTorch 1.7. The
+    unnormalized ``torch.fft`` pair matches the old default scaling.
+    """
+    return torch.fft.irfft(
+        torch.conj(torch.fft.rfft(a, dim=-1)) * torch.fft.rfft(b, dim=-1),
+        n=a.shape[-1],
+        dim=-1,
+    )
 
 
 def cal_slot_distance(value, slots):
@@ -126,7 +135,7 @@ def haversine(lon1, lat1, lon2, lat2):
         if not lon1.shape[0]:
             return None
         lon_lat = pd.concat([lon1, lat1, lon2, lat2], axis=1)
-        c = lon_lat.apply(lambda x: row_wise(x[0], x[1], x[2], x[3]), axis=1)
+        c = lon_lat.apply(lambda x: row_wise(x.iloc[0], x.iloc[1], x.iloc[2], x.iloc[3]), axis=1)
     else:
         if pd.isna(lon1) or pd.isna(lat1) or pd.isna(lon2) or pd.isna(lat2):
             return None
