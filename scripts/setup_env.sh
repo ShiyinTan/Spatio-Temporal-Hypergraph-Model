@@ -1,37 +1,50 @@
 #!/usr/bin/env bash
-# Create .venv and install a PyTorch 2.x + PyG stack.
+# Create the conda env "sthgcn" and install PyTorch 2.x + PyG.
 # Uses a CUDA wheel when nvidia-smi can see a GPU, otherwise a CPU wheel.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required" >&2
-  exit 1
-fi
+ENV_NAME="sthgcn"
+export CONDA_PLUGINS_AUTO_ACCEPT_TOS="${CONDA_PLUGINS_AUTO_ACCEPT_TOS:-yes}"
 
-python3 - <<'PY'
-import sys
-if sys.version_info < (3, 10):
-    raise SystemExit(
-        f"Python 3.10+ is required (found {sys.version.split()[0]}). "
-        "Create a newer environment, then re-run this script."
-    )
-print(f"Using {sys.version.split()[0]}")
-PY
-
-if [[ ! -x .venv/bin/python ]]; then
-  rm -rf .venv
-  if ! python3 -m venv .venv; then
-    echo "Could not create .venv. On Ubuntu install python3-venv, then re-run this script:" >&2
-    echo "  sudo apt-get install -y python3-venv" >&2
-    exit 1
+ensure_conda() {
+  if command -v conda >/dev/null 2>&1; then
+    return
   fi
-fi
+  local prefix
+  for prefix in "$HOME/miniconda3" "$HOME/anaconda3" "$HOME/miniforge3" "/opt/conda"; do
+    if [[ -f "${prefix}/etc/profile.d/conda.sh" ]]; then
+      # shellcheck disable=SC1091
+      source "${prefix}/etc/profile.d/conda.sh"
+      return
+    fi
+  done
+
+  local installer="/tmp/miniconda.sh"
+  local url="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) url="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" ;;
+    Linux-aarch64) url="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh" ;;
+    Darwin-arm64) url="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh" ;;
+    Darwin-x86_64) url="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh" ;;
+    *)
+      echo "Install Miniconda yourself, then re-run this script. Unsupported platform: $(uname -s)-$(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+  echo "conda was not found. Installing Miniconda into ${HOME}/miniconda3"
+  curl -fsSL -o "${installer}" "${url}"
+  bash "${installer}" -b -p "${HOME}/miniconda3"
+  # shellcheck disable=SC1091
+  source "${HOME}/miniconda3/etc/profile.d/conda.sh"
+  conda init bash >/dev/null
+}
+
+ensure_conda
 # shellcheck disable=SC1091
-source .venv/bin/activate
-python -m pip install -U pip setuptools wheel
+source "$(conda info --base)/etc/profile.d/conda.sh"
 
 # Newest PyTorch release that still has official torch-scatter / torch-sparse wheels.
 # A newer torch (2.13+) currently has no matching PyG extension wheel.
@@ -46,7 +59,7 @@ choose_stack() {
     echo "cpu 2.12.1"
     return
   fi
-  python - "${ver}" <<'PY'
+  python3 - "${ver}" <<'PY'
 import sys
 major, minor = (int(part) for part in sys.argv[1].split(".")[:2])
 # nvidia-smi reports the newest CUDA runtime this driver can load.
@@ -65,6 +78,16 @@ PY
 }
 
 read -r CUDA_INDEX TORCH_VERSION < <(choose_stack)
+
+if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+  echo "Reusing conda env ${ENV_NAME}"
+else
+  echo "Creating conda env ${ENV_NAME} from environment.yml"
+  conda env create -f environment.yml -y
+fi
+conda activate "${ENV_NAME}"
+python -m pip install -U pip setuptools wheel
+
 echo "Installing PyTorch ${TORCH_VERSION} from the ${CUDA_INDEX} index"
 python -m pip install "torch==${TORCH_VERSION}" --index-url "https://download.pytorch.org/whl/${CUDA_INDEX}"
 
@@ -101,5 +124,8 @@ print(f"torch_scatter {torch_scatter.__version__}")
 print(f"torch_sparse {torch_sparse.__version__}")
 PY
 
+CONDA_BASE="$(conda info --base)"
 echo
-echo "Environment is ready. Activate it with: source .venv/bin/activate"
+echo "Conda env ${ENV_NAME} is ready. Activate it with:"
+echo "  source \"${CONDA_BASE}/etc/profile.d/conda.sh\""
+echo "  conda activate ${ENV_NAME}"
