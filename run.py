@@ -29,6 +29,13 @@ def _tensorboard_hparams(hparam_dict):
     return sanitized
 
 
+def _log_eval_scalars(writer, result, prefix, step):
+    """Log every reported metric in [0, 1], matching the paper tables."""
+    for name, value in result.as_dict(aliases=True).items():
+        writer.add_scalar(f'{prefix}/{name}', value, step)
+    writer.add_scalar(f'{prefix}/eval_loss', result.loss, step)
+
+
 if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
@@ -246,18 +253,18 @@ if __name__ == '__main__':
                     logging.info(f'[Evaluating] Evaluating on Valid Dataset...')
 
                     logging.info(f'[Evaluating] Epoch {eph}, step {global_step}:')
-                    recall_res, ndcg_res, map_res, mrr_res, eval_loss = test_step(model, data=sampler_validate)
-                    summary_writer.add_scalar(f'validate/Recall@1', 100*recall_res[1], global_step)
-                    summary_writer.add_scalar(f'validate/Recall@5', 100*recall_res[5], global_step)
-                    summary_writer.add_scalar(f'validate/Recall@10', 100*recall_res[10], global_step)
-                    summary_writer.add_scalar(f'validate/Recall@20', 100*recall_res[20], global_step)
-                    summary_writer.add_scalar(f'validate/MRR', mrr_res, global_step)
-                    summary_writer.add_scalar(f'validate/eval_loss', eval_loss, global_step)
+                    valid_result = test_step(model, data=sampler_validate, split='validate')
+                    _log_eval_scalars(summary_writer, valid_result, 'validate', global_step)
                     summary_writer.add_scalar('train/learning_rate', current_learning_rate, global_step)
 
-                    metrics = 4 * recall_res[1] + recall_res[20]
+                    # Acc@K equals the previous Recall@K on this single-label task.
+                    metrics = 4 * valid_result.acc[1] + valid_result.acc[20]
+                    logging.info(
+                        '[Evaluating] Checkpoint score (4 * Acc@1 + Acc@20): %.4f',
+                        metrics,
+                    )
 
-                    # save model based on compositional recall metrics
+                    # save model based on Acc@1 and Acc@20
                     if metrics > best_metrics:
                         save_variable_list = {
                             'step': global_step,
@@ -293,24 +300,18 @@ if __name__ == '__main__':
 
         checkpoint = torch_load(osp.join(cfg.run_args.save_path, 'checkpoint.pt'), map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        recall_res, ndcg_res, map_res, mrr_res, loss = test_step(model, sampler_test)
+        test_result = test_step(model, sampler_test, split='test')
         num_params = count_parameters(model)
         metric_dict = {
-            'hparam/num_params': num_params,
-            'hparam/Recall@1': recall_res[1],
-            'hparam/Recall@5': recall_res[5],
-            'hparam/Recall@10': recall_res[10],
-            'hparam/Recall@20': recall_res[20],
-            'hparam/NDCG@1': ndcg_res[1],
-            'hparam/NDCG@5': ndcg_res[5],
-            'hparam/NDCG@10': ndcg_res[10],
-            'hparam/NDCG@20': ndcg_res[20],
-            'hparam/MAP@1': map_res[1],
-            'hparam/MAP@5': map_res[5],
-            'hparam/MAP@10': map_res[10],
-            'hparam/MAP@20': map_res[20],
-            'hparam/MRR': mrr_res,
+            f'hparam/{name}': value
+            for name, value in test_result.as_dict(aliases=True).items()
         }
-        logging.info(f'[Evaluating] Test evaluation result : {metric_dict}')
+        metric_dict['hparam/num_params'] = num_params
+        written = test_result.save(
+            cfg.run_args.log_path,
+            split='test',
+            extra={'num_params': num_params},
+        )
+        logging.info('[Evaluating] Wrote %s', ', '.join(written))
         summary_writer.add_hparams(_tensorboard_hparams(hparam_dict), metric_dict)
         summary_writer.close()

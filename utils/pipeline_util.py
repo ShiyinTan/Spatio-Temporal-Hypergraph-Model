@@ -4,12 +4,7 @@ import logging
 import numpy as np
 from tqdm import tqdm
 import os.path as osp
-from metric import (
-    recall,
-    ndcg,
-    map_k,
-    mrr
-)
+from metric import evaluate_ranking
 
 
 def save_model(model, optimizer, save_variable_list, run_args, argparse_dict):
@@ -35,7 +30,12 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def test_step(model, data, ks=(1, 5, 10, 20)):
+def test_step(model, data, ks=(1, 5, 10, 20), split='eval'):
+    """Rank every candidate POI and report Acc, NDCG, MAP, Precision, F1 and MRR.
+
+    For this task Acc@K, HR@K and Recall@K are the same number: the fraction of
+    samples whose single ground-truth next POI sits inside the top K.
+    """
     model.eval()
     loss_list = []
     pred_list = []
@@ -62,13 +62,6 @@ def test_step(model, data, ks=(1, 5, 10, 20)):
             label_list.append(row.y[:, :1].cpu())
     pred_ = torch.cat(pred_list, dim=0)
     label_ = torch.cat(label_list, dim=0)
-    recalls, NDCGs, MAPs = {}, {}, {}
-    logging.info(f"[Evaluating] Average loss: {np.mean(loss_list)}")
-    for k_ in ks:
-        recalls[k_] = recall(label_, pred_, k_).cpu().detach().numpy().tolist()
-        NDCGs[k_] = ndcg(label_, pred_, k_).cpu().detach().numpy().tolist()
-        MAPs[k_] = map_k(label_, pred_, k_).cpu().detach().numpy().tolist()
-        logging.info(f"[Evaluating] Recall@{k_} : {recalls[k_]},\tNDCG@{k_} : {NDCGs[k_]},\tMAP@{k_} : {MAPs[k_]}")
-    mrr_res = mrr(label_, pred_).cpu().detach().numpy().tolist()
-    logging.info(f"[Evaluating] MRR : {mrr_res}")
-    return recalls, NDCGs, MAPs, mrr_res, np.mean(loss_list)
+    result = evaluate_ranking(label_, pred_, ks=ks, loss=float(np.mean(loss_list)))
+    logging.info('\n%s', result.format_report(split))
+    return result
